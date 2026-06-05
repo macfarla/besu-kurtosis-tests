@@ -1,0 +1,43 @@
+# Kurtosis ethereum-package config for reproducing the FCU stall (besu-eth/besu#10498).
+#
+# Uses ethereum-package's snooper_params.image to inject our FCU-dropping proxy
+# between the CL and EL automatically — no manual port-forwarding needed.
+#
+# Setup (one-time):
+#   cd scripts
+#   docker build -f fcu-proxy.Dockerfile -t fcu-proxy:local .
+#
+# Run:
+#   kurtosis run github.com/ethpandaops/ethereum-package \
+#     --args-file scripts/kurtosis-fcu-stall.yaml
+#
+# What to watch:
+#   kurtosis service logs <enclave> el-1-besu 2>&1 | grep -E "layered world|SYNCING|cached world"
+#
+#   With the fix (PR #10509):
+#     - "adding layered world state" log lines accumulate up to ~128
+#     - Then "Returning SYNCING for engine_newPayload: N cached world state layers" fires
+#     - Heap stays flat, GC keeps up
+#
+#   Without the fix (26.4.0):
+#     - Layers accumulate without bound
+#     - G1 Old Gen climbs continuously
+#     - BlockedThreadChecker fires, eventually OOM
+#
+#   Proxy logs (to confirm FCU is being dropped):
+#   kurtosis service logs <enclave> snooper-el-1-besu 2>&1 | grep -E "FCU|newPayload|SYNCING"
+
+participants:
+  - el_type: besu
+    # To test your local branch: build with ./gradlew distDocker, then use the resulting image tag
+    el_image: hyperledger/besu:26.5-develop-446b4b6
+    el_log_level: DEBUG
+    el_extra_params:
+      - "--Xplugin-rocksdb-high-spec-enabled=true"
+    cl_type: lighthouse
+    cl_image: sigp/lighthouse:latest
+
+network_params:
+  # 2s slots so 128 layers accumulate in ~4 min instead of ~26 min
+  seconds_per_slot: 2
+  num_validator_keys_per_node: 128
