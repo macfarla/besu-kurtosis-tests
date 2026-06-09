@@ -86,3 +86,54 @@ subsequent blocks. Heap stays flat. Exec times settle to 3–8 ms.
 ```bash
 kurtosis enclave rm -f layer-leak-unfixed layer-leak-fixed
 ```
+
+---
+
+## Alternative: Prysm stop/restart (`prysm-stop-restart.yaml`)
+
+A second config that reproduces the same bug without a proxy. Stopping and restarting Prysm causes it to send a burst of `engine_newPayloadV4` calls with no FCU between them — the exact reconnect scenario from the original bug report. Useful for testing with Prysm specifically (the proxy approach uses Lighthouse), and requires no extra Docker build.
+
+The config includes four participants: a Geth+Lighthouse supernode, a Besu+Prysm target node (replace `el_image` with the image under test), a Besu+Lighthouse control node, and a Geth+Prysm control node.
+
+### Run
+
+```bash
+kurtosis loki start
+kurtosis run github.com/ethpandaops/ethereum-package@6.1.0 \
+  --enclave prysm-stall \
+  --args-file bonsai-layer-leak/prysm-stop-restart.yaml \
+  --image-download always
+```
+
+### Trigger (after finality, ~5–7 min)
+
+```bash
+ENCLAVE=prysm-stall
+kurtosis service stop $ENCLAVE cl-2-prysm-besu
+sleep 180   # let the network run ~30 slots ahead
+kurtosis service start $ENCLAVE cl-2-prysm-besu
+kurtosis service logs $ENCLAVE el-2-besu-prysm --follow
+```
+
+### What to watch
+
+```bash
+# Bug present: burst of imports with no FCU between them
+kurtosis service logs $ENCLAVE el-2-besu-prysm 2>&1 | grep -E "Imported|FCU\("
+
+# Fix working: SYNCING responses followed by BackwardSync
+kurtosis service logs $ENCLAVE el-2-besu-prysm 2>&1 \
+  | grep -E "SYNCING|not immediately cached|BackwardSync"
+```
+
+**Unfixed:** 30+ `Imported #N` lines in under a second, zero FCU between them.  
+**Fixed (PR #10600):** One `Imported #N`, then `"Parent world state not immediately cached … returning SYNCING"` for subsequent blocks; `BackwardSyncContext` starts; normal import resumes within ~2 min.
+
+### Comparison
+
+| | FCU-dropping proxy | Prysm stop/restart |
+|---|---|---|
+| Deterministic | Yes | No (timing-dependent) |
+| CL used | Lighthouse | Prysm |
+| Extra setup | Proxy Docker build | None |
+| Bug visibility | Continuous accumulation | Reconnect burst only |
