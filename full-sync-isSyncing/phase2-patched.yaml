@@ -1,0 +1,54 @@
+# Issue #10589 Phase 2 — verify fix for UNSUPPORTED_FORK (-38005) on engine_getBlobsV2/V3
+# during full sync on post-merge networks.
+#
+# Fix: PostMergeContext.isSyncing() now correctly returns true for post-TTD networks
+# when the chain head is behind the canonical chain.
+#
+# Replace el_image with the patched image under test.
+#
+# Trigger procedure (after epoch 4+ finality with blobs on-chain):
+#   ENCLAVE=issue-10589-phase2
+#   kurtosis service stop $ENCLAVE el-2-besu-lighthouse
+#   kurtosis service stop $ENCLAVE cl-2-lighthouse-besu
+#   kurtosis service start $ENCLAVE el-2-besu-lighthouse
+#   sleep 10
+#   kurtosis service exec $ENCLAVE el-2-besu-lighthouse "rm -rf /data/besu/execution-data"
+#   kurtosis service stop $ENCLAVE el-2-besu-lighthouse
+#   kurtosis service start $ENCLAVE el-2-besu-lighthouse
+#   kurtosis service start $ENCLAVE cl-2-lighthouse-besu
+#
+# What to watch:
+#   kurtosis service logs $ENCLAVE cl-2-lighthouse-besu 2>&1 | grep -E "38005|Unsupported|blob|Synced"
+#   kurtosis service logs $ENCLAVE el-2-besu-lighthouse 2>&1 | grep -E "GetBlobsV|Imported|VALID"
+#
+# Expected (fix working): no UNSUPPORTED_FORK errors; blobs retrieved successfully:
+#   EngineGetBlobsV3 | Requested N bundles, found N valid bundles
+#   Imported #N ... N blobs ... status: VALID
+
+participants:
+  # Primary: Geth + Lighthouse, holds all validators, produces blocks + blob txs
+  - el_type: geth
+    cl_type: lighthouse
+    count: 1
+
+  # Observer: Besu full-syncing, no validators — replace with patched image
+  - el_type: besu
+    el_image: "hyperledger/besu:develop"
+    el_log_level: "debug"
+    cl_type: lighthouse
+    validator_count: 0
+    count: 1
+
+network_params:
+  preset: minimal
+  fulu_fork_epoch: 3
+
+additional_services:
+  - spamoor
+  - prometheus_grafana
+
+spamoor_params:
+  spammers:
+    - scenario: blob-combined
+      config:
+        throughput: 2

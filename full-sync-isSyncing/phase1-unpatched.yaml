@@ -1,0 +1,55 @@
+# Issue #10589 Phase 1 — reproduce UNSUPPORTED_FORK (-38005) on engine_getBlobsV2/V3
+# during full sync on post-merge networks.
+#
+# Bug: PostMergeContext.isSyncing() always returned false on post-TTD networks,
+# so the syncing short-circuit was skipped and fork validation failed against a
+# pre-fork chain head.
+#
+# Fulu activates at epoch 3 (~144s with minimal preset: 8 slots × 6s = 48s/epoch).
+# spamoor blob-combined generates blob transactions so Lighthouse calls engine_getBlobsV2.
+#
+# Trigger procedure (after epoch 4+ finality with blobs on-chain):
+#   ENCLAVE=issue-10589-phase1
+#   kurtosis service stop $ENCLAVE el-2-besu-lighthouse
+#   kurtosis service stop $ENCLAVE cl-2-lighthouse-besu
+#   kurtosis service start $ENCLAVE el-2-besu-lighthouse
+#   sleep 10
+#   kurtosis service exec $ENCLAVE el-2-besu-lighthouse "rm -rf /data/besu/execution-data"
+#   kurtosis service stop $ENCLAVE el-2-besu-lighthouse
+#   kurtosis service start $ENCLAVE el-2-besu-lighthouse
+#   kurtosis service start $ENCLAVE cl-2-lighthouse-besu
+#
+# What to watch:
+#   kurtosis service logs $ENCLAVE cl-2-lighthouse-besu 2>&1 | grep -E "38005|Unsupported|blob"
+#
+# Expected (bug present): repeated errors every 6s while Besu syncs from genesis:
+#   Execution engine call failed  error: ServerMessage { code: -38005, message: "Unsupported fork" }
+#   Error fetching or processing blobs from EL  error: RequestFailed(...)
+
+participants:
+  # Primary: Geth + Lighthouse, holds all validators, produces blocks + blob txs
+  - el_type: geth
+    cl_type: lighthouse
+    count: 1
+
+  # Observer: Besu full-syncing, no validators — replace with image under test
+  - el_type: besu
+    el_image: "hyperledger/besu:develop"
+    el_log_level: "debug"
+    cl_type: lighthouse
+    validator_count: 0
+    count: 1
+
+network_params:
+  preset: minimal
+  fulu_fork_epoch: 3
+
+additional_services:
+  - spamoor
+  - prometheus_grafana
+
+spamoor_params:
+  spammers:
+    - scenario: blob-combined
+      config:
+        throughput: 2

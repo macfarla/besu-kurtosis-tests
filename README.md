@@ -6,6 +6,8 @@ Kurtosis devnet configs and test scripts for validating Besu PRs.
 
 - `shared/` — utilities reused across tests (log seeder, LogSpammer contract)
 - `ws-backpressure/` — WebSocket event-loop backpressure regression (PR #10354)
+- `bonsai-layer-leak/` — LayeredKeyValueStorage unbounded growth during sync (PR #10600)
+- `full-sync-isSyncing/` — `PostMergeContext.isSyncing()` always false on post-merge networks, causing `UNSUPPORTED_FORK` on blob API calls during full sync (issue #10589)
 
 ## Common setup
 
