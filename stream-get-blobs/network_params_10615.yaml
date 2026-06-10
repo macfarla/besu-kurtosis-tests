@@ -1,0 +1,28 @@
+# Issue #10615 — streaming engine_getBlobsV2 / engine_getBlobsV3
+#
+# Tests that getBlobsV2 and getBlobsV3 route through StreamingJsonRpcMethod
+# and that V2 all-or-nothing and V3 partial-response semantics are correct.
+#
+# Fulu (Osaka) activates at genesis (fulu_fork_epoch: 0) — no need to wait
+# for fork activation, we just need blobs in the pending pool.
+#
+# Note: osaka_time is an ethereum-package-internal field; fulu_fork_epoch is
+# the correct user-facing config key.
+
+participants:
+  # Primary: Geth + Lighthouse, holds all validators, produces blocks
+  - el_type: geth
+    cl_type: lighthouse
+    count: 1
+
+  # Besu node under test — no validators
+  - el_type: besu
+    el_image: "besu-stream-blobs:local"
+    el_log_level: "debug"
+    cl_type: lighthouse
+    validator_count: 0
+    count: 1
+
+network_params:
+  preset: minimal
+  fulu_fork_epoch: 0
